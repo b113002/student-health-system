@@ -13,7 +13,7 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    # 建立權限表 (預設寫入一個測試管理員帳號)
+    # 建立權限表
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS authorized_users (
             gmail TEXT PRIMARY KEY,
@@ -21,26 +21,28 @@ def init_db():
         )
     ''')
     
-    # 建立健康資料表
+    # 建立健康資料表 (統一修正欄位名稱)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS health_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             grade INTEGER,
-            class_num INTEGER,  -- 新增：班級 (1~8)
-            seat INTEGER,       -- 座號 (1~40)
-            name TEXT,          -- 姓名
-            disease_info TEXT   -- 病史/健康狀況
+            class_num INTEGER,
+            seat INTEGER,
+            name TEXT,
+            disease_name TEXT,
+            disease_content TEXT,
+            care_instructions TEXT
         )
     ''')
     
-    # 預設寫入管理者帳號 (請替換為您自己的 Gmail)
+    # 預設寫入管理者帳號
     cursor.execute('INSERT OR IGNORE INTO authorized_users (gmail, role) VALUES (?, ?)', ('b113002@yuteh.ntpc.edu.tw', 'admin'))
     conn.commit()
     conn.close()
 
 init_db()
 
-# ==================== HTML 模版 (包含前端介面) ====================
+# ==================== HTML 模組 ====================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -97,50 +99,36 @@ HTML_TEMPLATE = """
                 <div class="card shadow">
                     <div class="card-header bg-white"><h4>學生健康資料查詢</h4></div>
                     <div class="card-body">
-                       <form method="POST" action="/search" class="row g-3">
-  <!-- 年級 (1~12) -->
-  <div class="col-md-3">
-    <label class="form-label">年級</label>
-    <select name="grade" class="form-select">
-      <option value="">請選擇年級</option>
-      {% for g in grades %}
-        <option value="{{ g }}">{{ g }} 年級</option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <!-- 新增：班級 (1~8) -->
-  <div class="col-md-3">
-    <label class="form-label">班級</label>
-    <select name="class_num" class="form-select">
-      <option value="">請選擇班級</option>
-      {% for c in classes %}
-        <option value="{{ c }}">{{ c }} 班</option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <!-- 座號 (1~40) -->
-  <div class="col-md-3">
-    <label class="form-label">座號</label>
-    <select name="seat" class="form-select">
-      <option value="">請選擇座號</option>
-      {% for s in seats %}
-        <option value="{{ s }}">{{ s }} 號</option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <!-- 姓名 -->
-  <div class="col-md-3">
-    <label class="form-label">學生姓名</label>
-    <input type="text" name="name" class="form-control" placeholder="輸入姓名可模糊查詢">
-  </div>
-
-  <div class="col-12 mt-3">
-    <button type="submit" class="btn btn-primary w-100">查詢學生健康紀錄</button>
-  </div>
-</form>
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">年級</label>
+                                <select id="grade" class="form-select">
+                                    <option value="">請選擇年級</option>
+                                    {% for g in grades %}<option value="{{ g }}">{{ g }} 年級</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">班級</label>
+                                <select id="class_num" class="form-select">
+                                    <option value="">請選擇班級</option>
+                                    {% for c in classes %}<option value="{{ c }}">{{ c }} 班</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">座號</label>
+                                <select id="seat" class="form-select">
+                                    <option value="">請選擇座號</option>
+                                    {% for s in seats %}<option value="{{ s }}">{{ s }} 號</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">學生姓名 (選填)</label>
+                                <input type="text" id="name" class="form-control" placeholder="輔助比對姓名">
+                            </div>
+                            <div class="col-12 mt-3">
+                                <button type="button" onclick="searchData()" class="btn btn-primary w-100">查詢學生健康紀錄</button>
+                            </div>
+                        </div>
 
                         <div id="resultArea" class="mt-4" style="display: none;">
                             <hr>
@@ -173,7 +161,7 @@ HTML_TEMPLATE = """
                                     <div class="mb-3">
                                         <label class="form-label">請選擇 Excel 檔案 (.xlsx)</label>
                                         <input type="file" name="excel_file" class="form-control" accept=".xlsx" required>
-                                        <small class="text-muted">格式要求：標題列需包含「年級、座號、姓名、疾病名稱、疾病內容、照護注意事項」</small>
+                                        <small class="text-muted">格式要求：標題列需包含「年級、班級、座號、姓名、疾病名稱、疾病內容、照護注意事項」</small>
                                     </div>
                                     <button type="submit" class="btn btn-success">批次匯入/更新資料</button>
                                 </form>
@@ -211,19 +199,20 @@ HTML_TEMPLATE = """
 <script>
 function searchData() {
     const grade = document.getElementById('grade').value;
+    const class_num = document.getElementById('class_num').value;
     const seat = document.getElementById('seat').value;
 
-    if (!grade || !seat) {
-        alert("請選擇年級與座號！");
+    if (!grade || !class_num || !seat) {
+        alert("請完整選擇年級、班級與座號！");
         return;
     }
 
-    fetch(`/api/search?grade=${grade}&seat=${seat}`)
+    fetch(`/api/search?grade=${grade}&class_num=${class_num}&seat=${seat}`)
         .then(response => response.json())
         .then(data => {
             const resultArea = document.getElementById('resultArea');
             if (data.status === 'success') {
-                document.getElementById('resStudentName').innerText = `${grade} 年級 ${seat} 號 - 學生姓名：${data.data.name}`;
+                document.getElementById('resStudentName').innerText = `${grade} 年級 ${class_num} 班 ${seat} 號 - 學生姓名：${data.data.name}`;
                 document.getElementById('resDiseaseName').innerText = data.data.disease_name || "無紀錄";
                 document.getElementById('resDiseaseContent').innerText = data.data.disease_content || "無特殊疾病內容";
                 document.getElementById('resCare').innerText = data.data.care_instructions || "無特殊照護事項";
@@ -242,9 +231,14 @@ function searchData() {
 # ==================== 路由與邏輯控制 ====================
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    # 傳入選單範圍給 HTML
+    return render_template_string(
+        HTML_TEMPLATE,
+        grades=list(range(1, 13)),
+        classes=list(range(1, 9)),
+        seats=list(range(1, 41))
+    )
 
-# 開發模擬登入 (正式環境請改接 Google OAuth)
 @app.route('/dev_login', methods=['POST'])
 def dev_login():
     email = request.form.get('email')
@@ -265,7 +259,6 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# Excel 檔上傳邏輯
 @app.route('/upload_excel', methods=['POST'])
 def upload_excel():
     if not session.get('user') or session['user']['role'] != 'admin':
@@ -277,15 +270,15 @@ def upload_excel():
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
-        # 清除舊資料（可改為更新）
         cursor.execute('DELETE FROM health_records')
         
         for _, row in df.iterrows():
             cursor.execute('''
-                INSERT INTO health_records (grade, seat_number, name, disease_name, disease_content, care_instructions)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO health_records (grade, class_num, seat, name, disease_name, disease_content, care_instructions)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 int(row['年級']),
+                int(row['班級']),
                 int(row['座號']),
                 str(row['姓名']),
                 str(row.get('疾病名稱', '')),
@@ -297,7 +290,6 @@ def upload_excel():
         return "<script>alert('資料上傳成功！'); window.location.href='/';</script>"
     return "上傳失敗", 400
 
-# 新增授權帳號
 @app.route('/add_user', methods=['POST'])
 def add_user():
     if not session.get('user') or session['user']['role'] != 'admin':
@@ -314,13 +306,13 @@ def add_user():
     
     return "<script>alert('新增帳號成功！'); window.location.href='/';</script>"
 
-# API：查詢學生資料
 @app.route('/api/search')
 def api_search():
     if not session.get('user'):
         return jsonify({'status': 'error', 'message': '請先登入'}), 401
 
     grade = request.args.get('grade')
+    class_num = request.args.get('class_num')
     seat = request.args.get('seat')
 
     conn = sqlite3.connect(DB_FILE)
@@ -328,8 +320,8 @@ def api_search():
     cursor.execute('''
         SELECT name, disease_name, disease_content, care_instructions 
         FROM health_records 
-        WHERE grade = ? AND seat_number = ?
-    ''', (grade, seat))
+        WHERE grade = ? AND class_num = ? AND seat = ?
+    ''', (grade, class_num, seat))
     record = cursor.fetchone()
     conn.close()
 
@@ -344,7 +336,7 @@ def api_search():
             }
         })
     else:
-        return jsonify({'status': 'error', 'message': '查無該年級與座號之學生資料'})
+        return jsonify({'status': 'error', 'message': '查無該年級、班級與座號之學生資料'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
