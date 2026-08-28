@@ -26,11 +26,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS health_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             grade INTEGER,
-            seat_number INTEGER,
-            name TEXT,
-            disease_name TEXT,
-            disease_content TEXT,
-            care_instructions TEXT
+            class_num INTEGER,  -- 新增：班級 (1~8)
+            seat INTEGER,       -- 座號 (1~40)
+            name TEXT,          -- 姓名
+            disease_info TEXT   -- 病史/健康狀況
         )
     ''')
     
@@ -98,29 +97,50 @@ HTML_TEMPLATE = """
                 <div class="card shadow">
                     <div class="card-header bg-white"><h4>學生健康資料查詢</h4></div>
                     <div class="card-body">
-                        <form id="searchForm" class="row g-3">
-                            <div class="col-md-4">
-                                <label class="form-label">年級 (1~12)</label>
-                                <select id="grade" class="form-select" required>
-                                    <option value="">請選擇年級</option>
-                                    {% for g in range(1, 13) %}
-                                        <option value="{{ g }}">{{ g }} 年級</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">座號 (1~40)</label>
-                                <select id="seat" class="form-select" required>
-                                    <option value="">請選擇座號</option>
-                                    {% for s in range(1, 41) %}
-                                        <option value="{{ s }}">{{ s }} 號</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <button type="button" onclick="searchData()" class="btn btn-primary w-100">查詢學生資料</button>
-                            </div>
-                        </form>
+                       <form method="POST" action="/search" class="row g-3">
+  <!-- 年級 (1~12) -->
+  <div class="col-md-3">
+    <label class="form-label">年級</label>
+    <select name="grade" class="form-select">
+      <option value="">請選擇年級</option>
+      {% for g in grades %}
+        <option value="{{ g }}">{{ g }} 年級</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- 新增：班級 (1~8) -->
+  <div class="col-md-3">
+    <label class="form-label">班級</label>
+    <select name="class_num" class="form-select">
+      <option value="">請選擇班級</option>
+      {% for c in classes %}
+        <option value="{{ c }}">{{ c }} 班</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- 座號 (1~40) -->
+  <div class="col-md-3">
+    <label class="form-label">座號</label>
+    <select name="seat" class="form-select">
+      <option value="">請選擇座號</option>
+      {% for s in seats %}
+        <option value="{{ s }}">{{ s }} 號</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- 姓名 -->
+  <div class="col-md-3">
+    <label class="form-label">學生姓名</label>
+    <input type="text" name="name" class="form-control" placeholder="輸入姓名可模糊查詢">
+  </div>
+
+  <div class="col-12 mt-3">
+    <button type="submit" class="btn btn-primary w-100">查詢學生健康紀錄</button>
+  </div>
+</form>
 
                         <div id="resultArea" class="mt-4" style="display: none;">
                             <hr>
